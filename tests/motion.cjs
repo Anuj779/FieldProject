@@ -1,0 +1,26 @@
+const {chromium} = require('playwright');
+const assert = require('node:assert/strict');
+(async () => {
+  const browser = await chromium.launch({headless:true});
+  const page = await browser.newPage({viewport:{width:1440,height:1000}});
+  const errors=[];
+  page.on('pageerror', e=>errors.push(e.message));
+  await page.goto('http://127.0.0.1:5000');
+  await page.waitForFunction(()=>window.ClauseMotion && window.Alpine && Alpine.$data(document.body).configLoaded);
+  assert.ok(await page.locator('.document-preview').evaluate(el=>el.getAnimations().length > 0));
+  await page.locator('.hero-art').hover();
+  await page.locator('.steps article').first().scrollIntoViewIfNeeded();
+  await page.waitForFunction(()=>document.querySelector('.steps article').getAnimations().length > 0);
+  await page.locator('.faq-list summary').first().click();
+  assert.equal(await page.locator('.faq-list details').first().getAttribute('open'), '');
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.waitForFunction(()=>document.getAnimations().filter(a=>a.playState==='running').length===0);
+  await page.setViewportSize({width:390,height:844});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  await page.getByRole('button',{name:'Sign in ↗',exact:true}).click();
+  await page.locator('.auth-panel').waitFor({state:'visible'});
+  assert.deepEqual(errors,[]);
+  await browser.close();
+  console.log('Motion checks passed: floating, scroll reveals, FAQ, reduced motion, mobile width, navigation, no JS errors.');
+})().catch(e=>{console.error(e);process.exit(1)});

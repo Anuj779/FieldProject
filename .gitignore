@@ -1,0 +1,12 @@
+.venv/
+.env
+.env.*
+!.env.example
+*firebase-adminsdk*.json
+*admin-credentials*.json
+*service-account*.json
+firebase-credentials.json
+__pycache__/
+.pytest_cache/
+tmp/
+test-results/

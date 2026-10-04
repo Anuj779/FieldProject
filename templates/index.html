@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#080809">
+  <meta name="description" content="Understand the obligations in your student agreement, one clause at a time.">
+  <title>Clausewise — Read between the lines.</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ef233c'/%3E%3Ctext x='7' y='24' fill='white' font-size='25' font-family='Arial'%3EC%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/motion.css">
+  <script defer src="/static/motion.js"></script>
+  <script defer src="/static/app.js"></script>
+  <script defer src="/static/vendor/alpine.min.js"></script>
+</head>
+<body x-data="clausewise">
+  <div class="scroll-progress" aria-hidden="true"></div>
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="ambient" aria-hidden="true"></div>
+  <header class="nav-wrap"><nav class="nav" aria-label="Main navigation">
+    <a href="/" @click.prevent="go('home')" class="brand"><span class="brand-mark" aria-hidden="true">c.</span>clausewise</a>
+    <div class="nav-middle"><a href="/#how" @click="go('home', false)">How it works</a><a href="/#faq" @click="go('home', false)">Questions</a></div>
+    <div class="nav-actions"><button class="text-button" x-show="user" x-cloak @click="logout()">Sign out</button><button class="nav-cta" @click="openWorkspace()" x-text="user ? 'Workspace ↗' : 'Sign in ↗'">Sign in ↗</button></div>
+  </nav></header>
+  <main id="main">
+    <div class="global-error" x-show="error && view === 'home'" x-cloak role="alert" x-text="error"></div>
+    <section x-show="view === 'home'" class="home">
+      <div class="hero container">
+        <div class="hero-copy reveal">
+          <p class="eyebrow"><span class="signal"></span> THE FINE PRINT, MADE CLEAR</p>
+          <h1>Read between<br>the <span class="accent-word">lines.</span></h1>
+          <p class="hero-description">Your next chapter starts with an agreement.<br>Understand what you’re signing up for.</p>
+          <div class="hero-actions"><button class="button primary" @click="openWorkspace()">Analyze agreement <span>↗</span></button><button class="button ghost" @click="loadSample()" :disabled="busy"><span x-text="busy ? 'Opening…' : 'Explore a sample'"></span><span>→</span></button></div>
+        </div>
+        <div class="hero-art reveal" aria-label="Illustration of a sample agreement and its explanation">
+          <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
+          <div class="document-preview">
+            <div class="doc-top"><span class="tiny-label">AGREEMENT / 001</span><span class="doc-seal">CW</span></div>
+            <p class="doc-heading">The next chapter.</p><p class="doc-subheading">Student housing agreement</p>
+            <div class="doc-lines"><i></i><i></i><i></i></div>
+            <div class="highlight-clause"><span>04. Termination</span><p>“The resident must provide <mark>30 days of written notice</mark> before ending the agreement.”</p></div>
+            <div class="doc-lines lower"><i></i><i></i></div><div class="signature">Your signature</div>
+          </div>
+          <div class="insight-preview"><div class="insight-top"><span class="signal"></span> IN PLAIN ENGLISH <span class="page-tag">P. 01</span></div><h3>Moving out? Plan ahead.</h3><p>You’ll need to notify the provider in writing at least 30 days before leaving.</p><span class="verified">Source excerpt included <span>↗</span></span></div>
+          <span class="art-caption">ILLUSTRATIVE SAMPLE · NOT A LIVE ANALYSIS</span>
+        </div>
+      </div>
+      <div class="use-strip container"><span>MADE FOR YOUR NEXT</span><p>Internship<span>/</span>First job<span>/</span>New place<span>/</span>Learning journey</p></div>
+      <section class="how container" id="how"><div class="section-title"><p class="eyebrow">LESS CONFUSION. MORE CLARITY.</p><h2>Before you say yes,<br>know the details.</h2></div><div class="steps"><article><span class="step-number">01</span><div><h3>Bring your agreement</h3><p>Sign in and upload a text-based PDF. Up to 30 pages and 10 MB.</p></div></article><article><span class="step-number">02</span><div><h3>Unpack the fine print</h3><p>Explore obligations, fees, notice periods and renewal terms, with evidence from your document.</p></div></article><article><span class="step-number">03</span><div><h3>Take clarity with you</h3><p>Download a readable report. Keep the details handy before your next conversation.</p></div></article></div></section>
+      <section class="faq container" id="faq"><div><p class="eyebrow">A FEW THINGS TO KNOW</p><h2>Clear from<br>the start.</h2></div><div class="faq-list"><details><summary>Is this legal advice?<span>+</span></summary><p>No. Clausewise explains what a document says. It may miss or misunderstand terms. Read the original agreement and ask a qualified professional when you need legal advice.</p></details><details><summary>What happens to my document?<span>+</span></summary><p>Your PDF is processed temporarily and is not saved as history. Extracted text is sent to Google Gemini. On its free tier, Google may use this text to improve products. Use fictional or redacted agreements for demos. Your current results stay in this browser tab until you leave or sign out.</p></details><details><summary>Can I upload a scanned agreement?<span>+</span></summary><p>For now, use a PDF with selectable text. Scanned, password-protected, or unreadable pages will receive a clear error.</p></details><details><summary>Does the sample use live AI?<span>+</span></summary><p>No. The sample uses a fictional housing agreement and prepared explanations. Your own uploads use live AI after sign-in and service configuration.</p></details></div></section>
+    </section>
+
+    <section class="auth-view container" x-show="view === 'login'" x-cloak>
+      <div class="auth-intro"><p class="eyebrow"><span class="signal"></span> YOUR NEXT CHAPTER</p><h1>A little clarity.<br><span class="accent">A better start.</span></h1><p>Make room for the exciting part.<br>We’ll help you understand the fine print.</p><div class="auth-quote"><span>“</span><p>Know what’s expected.<br>Ask better questions.<br>Decide with confidence.</p></div></div>
+      <div class="auth-panel"><span class="tiny-label">CLAUSEWISE / ACCOUNT</span><h2 x-text="authMode === 'signup' ? 'Create your account.' : authMode === 'reset' ? 'Reset your password.' : 'Welcome back.'"></h2><p class="muted" x-text="authMode === 'reset' ? 'We’ll send a reset link to your email.' : 'Your agreements deserve a closer look.'"></p>
+        <div class="notice" x-show="configLoaded && !config.firebase">Sign-in will be available once Firebase is connected. You can explore the sample review now.</div>
+        <div class="notice" x-show="error" role="alert" x-text="error"></div><div class="notice success" x-show="message" role="status" x-text="message"></div>
+        <form @submit.prevent="authenticate()"><label for="email">Email address</label><input id="email" type="email" x-model="email" autocomplete="email" required placeholder="you@university.edu">
+          <div x-show="authMode !== 'reset'"><label for="password">Password</label><div class="password-wrap"><input id="password" :type="showPassword ? 'text' : 'password'" x-model="password" :required="authMode !== 'reset'" :minlength="authMode === 'signup' ? 8 : 1" :autocomplete="authMode === 'signup' ? 'new-password' : 'current-password'" placeholder="Enter your password"><button type="button" @click="showPassword = !showPassword" :aria-label="showPassword ? 'Hide password' : 'Show password'" x-text="showPassword ? 'Hide' : 'Show'"></button></div><p class="field-hint" x-show="authMode === 'signup'">Use at least 8 characters.</p></div>
+          <button type="button" class="forgot text-button" x-show="authMode === 'login'" @click="setAuthMode('reset')">Forgot password?</button>
+          <button class="button primary full" :disabled="authBusy || !authReady" type="submit"><span x-text="authBusy ? 'Please wait…' : authMode === 'signup' ? 'Create account' : authMode === 'reset' ? 'Send reset link' : 'Sign in'"></span><span>↗</span></button>
+        </form>
+        <p class="auth-switch"><span x-text="authMode === 'login' ? 'New to Clausewise?' : 'Already have an account?'"></span> <button class="text-button accent" @click="setAuthMode(authMode === 'login' ? 'signup' : 'login')" x-text="authMode === 'login' ? 'Create account' : 'Sign in'"></button></p>
+        <div class="auth-divider"><span>or take a look first</span></div><button class="button ghost full" @click="loadSample()" :disabled="busy">Explore a sample <span>→</span></button>
+      </div>
+    </section>
+
+    <section class="workspace container" x-show="view === 'workspace'" x-cloak>
+      <div class="workspace-header"><div><p class="eyebrow">YOUR AGREEMENT, EXPLAINED</p><h1>Let’s take a closer look.</h1></div><span class="account-label" x-text="user?.email || ''"></span></div>
+      <div class="upload-layout"><div class="upload-panel"><div class="notice" x-show="configLoaded && !config.ai_ready">Live analysis is awaiting AI setup. The sample review is ready to explore.</div><div class="notice" role="alert" x-show="error" x-text="error"></div>
+        <div class="drop-zone" :class="{ dragging: dragging }" @dragover.prevent="dragging = true" @dragleave.prevent="dragging = false" @drop.prevent="dragging = false; selectFile($event.dataTransfer.files[0])">
+          <span class="upload-symbol" aria-hidden="true">↥</span><h2 x-text="file ? file.name : 'Drop your agreement here'"></h2><p x-text="file ? (file.size / 1024 / 1024).toFixed(2) + ' MB · Ready to review' : 'A little fine print. A lot more clarity.'"></p><button type="button" class="button ghost file-label" @click="$refs.pdfFile.click()" :disabled="busy" x-text="file ? 'Choose another PDF' : 'Choose PDF'"></button><input id="pdf-file" x-ref="pdfFile" type="file" style="display:none" aria-label="Choose a PDF agreement" accept="application/pdf,.pdf" @change="selectFile($event.target.files[0])" :disabled="busy"><small>PDF only · Up to 10 MB · Maximum 30 pages</small>
+        </div>
+        <label class="consent"><input type="checkbox" x-model="consent" :disabled="busy"><span>I understand that this text will be sent to Google Gemini, whose free tier may use it to improve products.</span></label>
+        <p role="status" x-show="file && !consent && !busy">PDF selected. Check the consent box above to enable analysis.</p>
+        <button class="button primary full" @click="analyze()" :disabled="!file || !consent || busy || !config.ai_ready"><span x-text="busy ? 'Reviewing your agreement…' : 'Analyze agreement'"></span><span x-show="!busy">↗</span></button>
+        <div class="loading-box" x-show="busy" role="status"><div class="scan-line"></div><p>Reading your document and checking the findings.<br><span>This can take a minute. Keep this tab open.</span></p></div>
+      </div><aside class="upload-aside"><p class="tiny-label">WHAT WE LOOK FOR</p><ul><li>Payments & penalties<span>01</span></li><li>Notice & cancellation<span>02</span></li><li>Lock-in & renewal<span>03</span></li><li>Other obligations<span>04</span></li></ul><p>Every finding includes the original wording and its page number.</p><div class="aside-note">Your PDF isn’t saved as history.<br>Your next step stays yours.</div><button class="text-button" @click="loadSample()" :disabled="busy">Explore a sample →</button></aside></div>
+    </section>
+
+    <section class="results container" x-show="view === 'results' && result" x-cloak>
+      <div class="result-topline"><button class="text-button" @click="openWorkspace()">← Analyze another</button><span class="sample-label" x-show="result?.sample">SAMPLE REVIEW · PREPARED EXPLANATIONS</span></div>
+      <div class="result-heading"><div><p class="eyebrow">THE DETAILS THAT MATTER</p><h1>Your agreement,<br><span class="accent">in plain English.</span></h1><p class="result-filename" x-text="result?.filename"></p></div><button class="button primary" @click="downloadReport()">Download report <span>↓</span></button></div>
+      <div class="result-stats"><div><strong x-text="result?.findings.length || 0"></strong><span>source-backed findings</span></div><div><strong x-text="result?.pages || 0"></strong><span>pages reviewed</span></div><p>A starting point for better questions.<br>Always check your full agreement.</p></div>
+      <div class="notice" x-show="result?.rejected"><span x-text="result?.rejected"></span> unsupported finding(s) were excluded. This review may be incomplete.</div>
+      <div class="result-tools"><label for="filter">Filter findings</label><select id="filter" x-model="filter"><option value="All">All findings</option><template x-for="category in categories" :key="category"><option :value="category" x-text="category"></option></template></select><span class="muted" x-text="filteredFindings.length + ' shown'"></span></div>
+      <div class="findings"><template x-for="(finding, index) in filteredFindings" :key="finding.category + finding.quote"><article class="finding"><div class="finding-index" x-text="String(index + 1).padStart(2, '0')"></div><div class="finding-content"><div class="finding-meta"><span x-text="finding.category"></span><span x-text="'PAGE ' + finding.page"></span></div><h2 x-text="finding.title"></h2><p x-text="finding.explanation"></p><details class="evidence"><summary>Read original clause <span>+</span></summary><blockquote x-text="finding.quote"></blockquote></details><p class="clarification" x-show="finding.needs_clarification"><strong>Ask the provider: </strong><span x-text="finding.question"></span></p></div></article></template></div>
+      <div class="empty-state" x-show="filteredFindings.length === 0"><h2>No findings to show.</h2><p x-text="filter !== 'All' ? 'Try a different category.' : 'No supported findings were returned. This does not mean the agreement has no obligations.'"></p></div>
+      <p class="result-disclaimer">Clausewise explains document content and may make mistakes. It does not assess legal enforceability or replace professional advice.</p>
+    </section>
+  </main>
+  <footer class="container"><a class="brand" href="/" @click.prevent="go('home')"><span class="brand-mark small">c.</span>clausewise</a><p>Read carefully. Decide confidently.</p><span>BUILT FOR WHAT’S NEXT.</span></footer>
+  <noscript><div class="notice">Please enable JavaScript to use sign-in and analysis.</div></noscript>
+</body></html>

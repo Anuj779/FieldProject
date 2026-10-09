@@ -5,10 +5,27 @@ document.addEventListener('alpine:init', () => {
     config: {firebase: null, ai_ready: false}, configLoaded: false, authReady: false,
     user: null, email: '', password: '', showPassword: false,
     authMode: 'login', authBusy: false, busy: false, error: '', message: '',
-    file: null, consent: false, dragging: false, result: null, filter: 'All', operation: 0,
+    speechState: 'idle', speechMessage: '', speechRate: 1,
+    stopReading() { window.ClauseReader?.stop(); this.speechState = 'idle'; this.speechMessage = ''; },
+    readReport() {
+      if (!this.result || this.busy) return;
+      if (this.speechState === 'playing') { ClauseReader.pause(); this.speechState = 'paused'; this.speechMessage = 'Reading paused.'; return; }
+      if (this.speechState === 'paused') { ClauseReader.resume(); this.speechState = 'playing'; this.speechMessage = 'Reading resumed.'; return; }
+      ClauseReader.play(this.result, this.speechRate, (state, message) => { this.speechState = state; this.speechMessage = message; });
+    },
+    file: null, consent: false, dragging: false, result: null, reportView: null, filter: 'All', operation: 0, scanStage: '', language: 'en', reportLanguage: 'en', reviewMode: 'agreement',
+    get reportLabels() {
+      const values = {
+        en: ['Your agreement, in plain English.', 'Download PDF', 'source-backed findings', 'pages reviewed', 'Read original clause', 'Ask the provider:', 'Page', 'All findings'],
+        hi: ['आपका समझौता, सरल हिन्दी में।', 'PDF डाउनलोड करें', 'मूल पाठ पर आधारित निष्कर्ष', 'पृष्ठों की समीक्षा', 'मूल शर्त पढ़ें', 'प्रदाता से पूछें:', 'पृष्ठ', 'सभी निष्कर्ष'],
+        mr: ['तुमचा करार, सोप्या मराठीत.', 'PDF डाउनलोड करा', 'मूळ मजकुरावर आधारित निष्कर्ष', 'पृष्ठांचा आढावा', 'मूळ अट वाचा', 'पुरवठादाराला विचारा:', 'पृष्ठ', 'सर्व निष्कर्ष']
+      };
+      return values[this.result?.language || 'en'];
+    },
     get categories() { return [...new Set((this.result?.findings || []).map(f => f.category))]; },
     get filteredFindings() { return (this.result?.findings || []).filter(f => this.filter === 'All' || f.category === this.filter); },
     async init() {
+      window.addEventListener('popstate', () => this.stopReading());
       window.addEventListener('popstate', () => { this.view = location.pathname === '/login' ? 'login' : location.pathname === '/workspace' ? (this.user ? 'workspace' : 'login') : 'home'; });
       try {
         this.config = await this.json('/api/config');
@@ -31,11 +48,23 @@ document.addEventListener('alpine:init', () => {
       finally { this.configLoaded = true; }
     },
     go(view, updateUrl = true) {
+      this.stopReading();
       this.view = view; this.error = ''; this.message = '';
       this.$nextTick(() => window.ClauseMotion?.refresh());
       if (updateUrl) { history.pushState({}, '', view === 'home' ? '/' : view === 'results' ? '/#review' : '/' + view); window.scrollTo({top: 0, behavior: 'instant'}); }
     },
+    openOfferReview() { this.reviewMode = 'offer'; this.result = null; this.openWorkspace(); },
     openWorkspace() { this.go(this.user ? 'workspace' : 'login'); },
+    showReport(data) {
+      this.stopReading();
+      this.result = data; this.reportLanguage = data.language || 'en'; this.filter = 'All'; this.reportView = this.view;
+      this.$nextTick(() => {
+        window.ClauseMotion?.refresh();
+        this.$refs.reportSection.scrollIntoView({behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start'});
+        this.$refs.reportTitle.focus({preventScroll: true});
+        window.ClauseMotion?.revealReport(this.$refs.reportSection);
+      });
+    },
     setAuthMode(mode) { this.authMode = mode; this.error = ''; this.message = ''; this.password = ''; },
     async json(url, options) {
       const response = await fetch(url, options);
@@ -69,42 +98,54 @@ document.addEventListener('alpine:init', () => {
     },
     selectFile(file) {
       if (this.busy) return;
+      this.stopReading();
       this.error = ''; this.file = null;
       if (!file) return;
       if (!file.name.toLowerCase().endsWith('.pdf')) { this.error = 'Please choose a PDF file.'; return; }
-      if (file.size > 10 * 1024 * 1024) { this.error = 'Choose a PDF smaller than 10 MB.'; return; }
+      if (file.size > 4 * 1024 * 1024) { this.error = 'Choose a PDF smaller than 4 MB.'; return; }
       if (file.size === 0) { this.error = 'This file is empty. Choose another PDF.'; return; }
-      this.file = file; this.consent = false;
+      this.file = file; this.consent = false; this.result = null;
     },
     async loadSample() {
       if (this.busy) return;
       this.busy = true; this.error = '';
       const op = ++this.operation;
-      try { const data = await this.json('/api/sample'); if (op !== this.operation) return; this.result = data; this.filter = 'All'; this.go('results'); }
+      try { const data = await this.json('/api/sample?language=' + this.language); if (op !== this.operation) return; this.showReport(data); }
       catch (error) { this.error = error.message; }
       finally { if (op === this.operation) this.busy = false; }
     },
-    async analyze() {
+    async changeReportLanguage() {
+      if (this.busy || !this.result || this.reportLanguage === this.result.language) return;
+      this.stopReading();
+      this.language = this.reportLanguage;
+      if (this.result.sample) { await this.loadSample(); return; }
+      if (!this.file) { this.error = 'Select the original PDF again to generate a report in another language.'; return; }
+      await this.analyze(true);
+    },
+    async analyze(preserveReport = false) {
       if (!this.user) { this.go('login'); return; }
       if (!this.file || !this.consent || this.busy) return;
-      this.busy = true; this.error = '';
+      this.stopReading();
+      this.busy = true; this.error = ''; if (!preserveReport) this.result = null;
       const op = ++this.operation;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 150000);
       try {
-        const token = await currentUser.getIdToken();
-        const form = new FormData(); form.append('file', this.file);
+        this.scanStage = 'Verifying your session';
+        const token = await currentUser.getIdToken(true);
+        this.scanStage = 'Analyzing your PDF and preparing the report';
+        const form = new FormData(); form.append('file', this.file); form.append('language', this.language); form.append('mode', this.reviewMode);
         const data = await this.json('/api/analyze', {method: 'POST', headers: {Authorization: 'Bearer ' + token}, body: form, signal: controller.signal});
         if (op !== this.operation || !this.user) return;
-        this.result = data; this.filter = 'All'; this.go('results');
+        this.showReport(data);
       } catch (error) { if (op === this.operation) this.error = error.name === 'AbortError' ? 'This analysis took too long. Please retry with a shorter document.' : error.message; }
-      finally { clearTimeout(timer); if (op === this.operation) this.busy = false; }
+      finally { clearTimeout(timer); if (op === this.operation) { this.busy = false; this.scanStage = ''; } }
     },
     downloadReport() {
       if (!this.result) return;
       const bytes = Uint8Array.from(atob(this.result.report), c => c.charCodeAt(0));
       const url = URL.createObjectURL(new Blob([bytes], {type: 'application/pdf'}));
-      const link = document.createElement('a'); link.href = url; link.download = this.result.sample ? 'Clausewise-sample-review.pdf' : 'Clausewise-agreement-review.pdf'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const link = document.createElement('a'); link.href = url; link.download = this.result.sample ? 'Clausewise-sample-review.pdf' : this.result.assessment ? 'Clausewise-offer-risk-report.pdf' : 'Clausewise-agreement-review.pdf'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
   }));
 });

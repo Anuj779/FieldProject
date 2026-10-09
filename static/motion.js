@@ -23,7 +23,26 @@
   const refresh = () => document.querySelectorAll(selector).forEach(node => {
     if (!watched.has(node)) { watched.add(node); observer.observe(node); }
   });
-  window.ClauseMotion = {refresh};
+  const revealReport = section => {
+    if (reduced.matches) return;
+    section.querySelectorAll('.result-heading h1, .result-filename, .result-stats, .finding-content > *').forEach((node, index) => {
+      running.get(node)?.cancel();
+      const animation = node.animate([
+        {opacity: 0, transform: 'translateY(20px)', filter: 'blur(4px)'},
+        {opacity: 1, transform: 'translateY(0)', filter: 'blur(0)'}
+      ], {duration: 700, delay: Math.min(index * 65, 850), easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards'});
+      running.set(node, animation);
+      animation.onfinish = () => running.delete(node);
+    });
+  };
+  window.ClauseMotion = {refresh, revealReport};
+  const nav = document.querySelector('.nav');
+  nav?.addEventListener('pointermove', event => {
+    if (reduced.matches || event.pointerType === 'touch') return;
+    const rect = nav.getBoundingClientRect();
+    nav.style.setProperty('--nav-x', `${event.clientX - rect.left}px`);
+    nav.style.setProperty('--nav-y', `${event.clientY - rect.top}px`);
+  }, {passive: true});
   document.addEventListener('DOMContentLoaded', refresh);
   reduced.addEventListener('change', () => {
     if (reduced.matches) { running.forEach(animation => animation.finish()); running.clear(); }

@@ -70,7 +70,7 @@ def test_invalid_token_is_rejected(authenticated):
 
 def test_valid_upload_and_rate_limit(authenticated, monkeypatch):
     client, headers = authenticated
-    def analyze(pages, api_key, model):
+    def analyze(pages, api_key, model, language="en"):
         assert '30 days' in pages[0]
         assert api_key == 'fake-test-key'
         return ground_findings(Analysis(findings=[SAMPLE_ANALYSIS.findings[2]]), pages)
@@ -202,3 +202,93 @@ def test_missing_admin_credentials_explains_setup(monkeypatch):
     response = client.post('/api/analyze', headers={'Authorization': 'Bearer test'})
     assert response.status_code == 503
     assert 'server authentication setup is incomplete' in response.json['error']
+
+
+@pytest.mark.parametrize('language', ['en', 'hi', 'mr'])
+def test_report_languages(client, language):
+    response = client.get('/api/sample?language=' + language)
+    assert response.status_code == 200
+    data = response.json
+    assert data['language'] == language
+    assert data['findings'][0]['quote'] == SAMPLE_ANALYSIS.findings[0].quote
+    if language != 'en':
+        assert any('\u0900' <= char <= '\u097f' for char in data['findings'][0]['explanation'])
+    assert base64.b64decode(data['report']).startswith(b'%PDF')
+
+
+def test_invalid_language(client):
+    assert client.get('/api/sample?language=invalid').status_code == 400
+
+
+def test_offer_score_deduplicates_and_rejects_false_evidence():
+    from analysis import offer_assessment, OfferAnalysis
+    finding = dict(category='Upfront payment', title='Payment requested', explanation='Verify this fee.', quote='Pay a joining fee of INR 5000.', page=1, needs_clarification=True, question='Why is this required?')
+    result = OfferAnalysis(findings=[finding, finding])
+    supported, rejected = ground_findings(result, ['Pay a joining fee of INR 5000.'])
+    assert len(supported) == 1
+    assert offer_assessment(supported, rejected)['score'] == 45
+    supported, rejected = ground_findings(result, ['No joining fee is required for this role.'])
+    assert not supported
+    assert offer_assessment(supported, rejected)['score'] is None
+    assert offer_assessment([], 0)['verdict'] == 'Authenticity unverified'
+
+
+def test_offer_upload_includes_score_and_pdf(authenticated, monkeypatch):
+    client, headers = authenticated
+    def analyze(pages, api_key, model, language, mode):
+        assert mode == 'offer'
+        return [dict(category='Pressure', title='Urgent payment request', explanation='Verify this request.', quote=pages[0], page=1, needs_clarification=True, question='Can HR confirm this?')], 0
+    monkeypatch.setattr(app_module, 'analyze_document', analyze)
+    result = client.post('/api/analyze', headers=headers, data={'mode':'offer', 'file':(io.BytesIO(pdf_bytes()), 'offer.pdf')})
+    assert result.status_code == 200
+    assert result.json['assessment']['score'] == 10
+    text = ''.join(p.extract_text() for p in PdfReader(io.BytesIO(base64.b64decode(result.json['report']))).pages)
+    assert 'Authenticity unverified' in text
+
+
+def test_offer_provider_outage_returns_labeled_report(authenticated, monkeypatch):
+    client, headers = authenticated
+    def unavailable(*args, **kwargs):
+        raise DocumentError('Gemini is temporarily busy or unavailable.')
+    monkeypatch.setattr(app_module, 'analyze_document', unavailable)
+    result = client.post('/api/analyze', headers=headers, data={'mode':'offer','language':'mr', 'file':(io.BytesIO(pdf_bytes('You must pay a joining fee of INR 5000 to secure this job.')), 'offer.pdf')})
+    assert result.status_code == 200
+    assert result.json['language'] == 'en'
+    assert result.json['assessment']['score'] == 45
+    assert 'Basic English screening' in result.json['assessment']['analysis_method']
+    assert result.json['findings'][0]['quote'] == 'You must pay a joining fee of INR 5000 to secure this job.'
+    assert base64.b64decode(result.json['report']).startswith(b'%PDF')
+
+
+def test_basic_offer_screening_ignores_prohibitions():
+    from offer_review import basic_offer_review
+    assert not basic_offer_review(['You must not pay a joining fee of INR 5000. Never share your password.'])
+
+
+def test_transient_provider_error_uses_backup(monkeypatch):
+    import analysis
+    calls = []
+    monkeypatch.setenv('GEMINI_FALLBACK_MODEL', 'backup-model')
+    monkeypatch.setattr(analysis.time, 'sleep', lambda _: None)
+    def generate(pages, key, model, **kwargs):
+        calls.append((model, kwargs))
+        if model == 'primary-model':
+            raise analysis.ProviderUnavailable('temporary')
+        return [], 0
+    monkeypatch.setattr(analysis, '_analyze_once', generate)
+    assert analysis.analyze_document(['test'], 'fake', 'primary-model', language='mr', mode='offer') == ([], 0)
+    assert [m for m, _ in calls] == ['primary-model', 'backup-model']
+    assert calls[1][1] == {'language': 'mr', 'mode': 'offer'}
+
+
+def test_provider_retries_are_bounded(monkeypatch):
+    import analysis
+    calls = []
+    monkeypatch.setattr(analysis.time, 'sleep', lambda _: None)
+    def unavailable(*args, **kwargs):
+        calls.append(1)
+        raise analysis.ProviderUnavailable('temporary')
+    monkeypatch.setattr(analysis, '_analyze_once', unavailable)
+    with pytest.raises(analysis.ProviderUnavailable):
+        analysis.analyze_document(['test'], 'fake', 'primary')
+    assert len(calls) == 3

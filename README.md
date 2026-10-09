@@ -28,7 +28,7 @@ The browser sends a Firebase ID token with each upload. Python verifies its sign
 
 ## Connect AI
 
-Create a Gemini API key at https://aistudio.google.com/apikey and put it in `GEMINI_API_KEY` in `.env`. The default `GEMINI_MODEL` is `gemini-3.8-flash`. Its free tier has model/project quotas; check your actual limits in AI Studio. Restart the server after configuration. Signing in to the Gemini chat app does not configure this API key.
+Create a Gemini API key at https://aistudio.google.com/apikey and put it in `GEMINI_API_KEY` in `.env`. The default `GEMINI_MODEL` is `gemini-3.5-flash-lite`. Its free tier has model/project quotas; check your actual limits in AI Studio. Restart the server after configuration. Signing in to the Gemini chat app does not configure this API key.
 
 The app sends page-numbered extracted text to Google Gemini. Free-tier data may be used to improve Google products: use fictional or redacted agreements for demonstrations. Pydantic validates returned fields, and the app rejects excerpts absent from the stated source page. This does not prove the explanation is correct or complete: review the findings against your document. Provider retention policies still apply.
 
@@ -36,7 +36,7 @@ The app sends page-numbered extracted text to Google Gemini. Free-tier data may 
 
 - Responsive landing, account, upload, and results screens using the supplied red noir aesthetic.
 - Email/password sign-up, sign-in, reset and sign-out with Firebase; credentials must be supplied by the owner.
-- Text PDF validation, up to 10 MB / 30 pages / 65,000 extracted characters; no OCR.
+- Text PDF validation, up to 4 MB / 30 pages / 65,000 extracted characters; no OCR.
 - Structured clause extraction, page references, evidence expansion and category filters.
 - PDF report included in the authenticated analysis response; no report database or public report URLs.
 - An explicitly labeled fictional sample with prepared findings, available without sign-in.
@@ -71,3 +71,26 @@ The backend tests mock external identity verification and AI responses. They tes
 [Flask](https://flask.palletsprojects.com/), [Firebase token verification](https://firebase.google.com/docs/auth/admin/verify-id-tokens), [Gemini structured outputs](https://ai.google.dev/gemini-api/docs/structured-output), [Pydantic](https://docs.pydantic.dev/), [pypdf](https://pypdf.readthedocs.io/), [ReportLab](https://docs.reportlab.com/), [Alpine.js](https://alpinejs.dev/).
 
 Bundled assets: Alpine.js 3.14.9 (MIT) and Manrope (SIL Open Font License). License copies are in `static/vendor/`.
+
+## Offer letter review
+
+Select **Offer letter** before uploading. Gemini extracts quoted warning signs; unsupported excerpts are discarded. The app calculates a heuristic score from unique categories: upfront payment 45, check forwarding 60, sensitive credentials 50, unverified contact 10, pressure 10, conflicting details 15. Scores are capped at 100; 45+ is high risk. These are product heuristics, not statistically calibrated fraud probabilities. Rejected evidence makes the score unavailable. A zero score does not prove authenticity. The app does not verify employers, senders, domains, signatures or company registrations. Independently confirm offers with the employer. Background guidance: https://consumer.ftc.gov/articles/job-scams.
+
+Reports support English, Hindi and Marathi explanations with unchanged source quotes. The offer assessment summary currently uses English. Noto Devanagari and HarfBuzz provide PDF text shaping.
+
+Temporary provider errors use up to three attempts (primary, backup, primary), with short delays and 35-second request timeouts. `GEMINI_FALLBACK_MODEL` defaults to `gemini-3.1-flash-lite`. Language and review type stay the same across attempts. Quota and credential errors are not retried. Basic offer screening remains labelled if all AI attempts fail.
+
+## Deploy to Vercel
+
+Import `Anuj779/FieldProject`, branch `main`, using the Flask framework preset. The repository includes `vercel.json`, a Python 3.12 version file, and `build.py` to publish frontend assets under `public/static`. Maximum PDF upload size is 4 MB to stay within Vercel request limits.
+
+Set these private server environment variables in Vercel before deploying:
+- `GEMINI_API_KEY`: your Gemini key.
+- `GEMINI_MODEL`: `gemini-3.5-flash-lite`.
+- `GEMINI_FALLBACK_MODEL`: `gemini-3.1-flash-lite`.
+- `FIREBASE_WEB_CONFIG`: the same single-line web configuration JSON used locally.
+- `FIREBASE_ADMIN_CREDENTIALS`: the complete Firebase service-account JSON, stored as a sensitive environment variable. Do not commit this file or use a public/frontend environment variable.
+
+Do not set the local Windows `GOOGLE_APPLICATION_CREDENTIALS` path on Vercel. Add the final deployment hostname to Firebase Authentication authorized domains. Redeploy after changing environment variables. Verify sign-in, authenticated upload, report language changes and PDF download on the deployed domain.
+
+Limits: the current cooldown/concurrency controls are per process, so Vercel instances do not share them. They are not a global usage cap. Provider quotas still apply. Browser speech depends on available device voices; offer authenticity cannot be certified from a document alone. Public hosting and authenticated production uploads must be checked after deployment.

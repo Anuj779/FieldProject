@@ -1,5 +1,7 @@
 """Page-aware PDF extraction, structured analysis and evidence validation."""
 import io
+import os
+import time
 import re
 from typing import Literal
 
@@ -12,6 +14,10 @@ MAX_TEXT = 65000
 
 
 class DocumentError(ValueError):
+    pass
+
+
+class ProviderUnavailable(DocumentError):
     pass
 
 
@@ -29,6 +35,27 @@ class Finding(BaseModel):
 class Analysis(BaseModel):
     model_config = ConfigDict(extra='forbid')
     findings: list[Finding] = Field(max_length=50)
+
+
+class OfferFinding(Finding):
+    category: Literal['Upfront payment', 'Check forwarding', 'Sensitive credentials', 'Unverified contact', 'Pressure', 'Conflicting details']
+
+
+class OfferAnalysis(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    findings: list[OfferFinding] = Field(max_length=30)
+
+
+def offer_assessment(findings, rejected):
+    weights = {'Upfront payment': 45, 'Check forwarding': 60, 'Sensitive credentials': 50,
+               'Unverified contact': 10, 'Pressure': 10, 'Conflicting details': 15}
+    contributions = [{'signal': category, 'points': weights[category]} for category in weights
+                     if any(f['category'] == category for f in findings)]
+    score = min(100, sum(c['points'] for c in contributions))
+    return {'score': None if rejected else score, 'level': 'Incomplete review' if rejected else
+            ('High risk' if score >= 45 else 'Caution' if score else 'No listed warning signs found'),
+            'verdict': 'Authenticity unverified', 'contributions': contributions,
+            'method': 'Heuristic warning-sign score, not a probability of fraud. Each category counts once; total capped at 100. No employer, sender or website was externally verified.'}
 
 
 def normalize(text):
@@ -76,7 +103,19 @@ def ground_findings(result, pages):
     return accepted, rejected
 
 
-def analyze_document(pages, api_key, model):
+def analyze_document(pages, api_key, model, language="en", mode="agreement"):
+    backup = os.getenv('GEMINI_FALLBACK_MODEL', 'gemini-3.1-flash-lite').strip() or model
+    for attempt, candidate in enumerate((model, backup, model)):
+        try:
+            return _analyze_once(pages, api_key, candidate, language=language, mode=mode)
+        except ProviderUnavailable:
+            if attempt == 2:
+                raise
+            time.sleep(attempt + 1)
+
+
+def _analyze_once(pages, api_key, model, language="en", mode="agreement"):
+    import httpx
     from google import genai
     from google.genai import types, errors
     instructions = (
@@ -89,8 +128,25 @@ def analyze_document(pages, api_key, model):
             'If ambiguous, set needs_clarification true and give a useful question for the provider; otherwise '
             'set question to an empty string. Empty findings are allowed. Merge duplicate findings.'
     )
+    language_name = {'en': 'English', 'hi': 'Hindi', 'mr': 'Marathi'}.get(language)
+    if not language_name:
+        raise DocumentError('Choose English, Hindi or Marathi.')
+    instructions += f' Write every title, explanation and question in {language_name}. Keep category values in English exactly as specified by the schema. Keep quotes verbatim in their original language; never translate quotes.'
+    schema_type = Analysis
+    if mode == 'offer':
+        schema_type = OfferAnalysis
+        instructions += (' For this request, review a job offer letter for warning signs ONLY, not general contract obligations. '
+            'Use these categories: Upfront payment means the candidate must pay to obtain the job (not employer-paid salary or ordinary contractual penalties); '
+            'Check forwarding means deposit an employer check then transfer funds or purchase gift cards; '
+            'Sensitive credentials means requests for passwords, OTPs, PINs or remote device access, not ordinary post-hire payroll details; '
+            'Unverified contact means explicit personal-email-only or messaging-only recruitment (a weak sign, not proof); '
+            'Pressure means explicit pressure to pay or share credentials urgently; Conflicting details means material internally inconsistent employer or role details. '
+            'Do not count warnings against scams as requests to perform them. Do not claim company verification, domain ownership checks, forgery detection or confirmed fraud. '
+            'Do not infer a fake offer from grammar, formatting, high salary or missing information alone. '
+            'Explain why each quoted request warrants checking, use cautious language, and give a concrete verification question. '
+            'Return no findings if the document is not an offer or has no supported warning signs. Never label an offer genuine.')
     # Send a portable schema subset; enforce all bounds and extra fields locally.
-    full_schema = Analysis.model_json_schema()
+    full_schema = schema_type.model_json_schema()
     def supported_schema(value):
         if isinstance(value, dict):
             if '$ref' in value:
@@ -101,7 +157,7 @@ def analyze_document(pages, api_key, model):
             return [supported_schema(v) for v in value]
         return value
     try:
-        with genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=60000)) as client:
+        with genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=35000, retry_options=types.HttpRetryOptions(attempts=1))) as client:
             response = client.models.generate_content(
                 model=model,
                 contents='\n\n'.join(f'PAGE {i+1}\n{text}' for i, text in enumerate(pages)),
@@ -114,12 +170,16 @@ def analyze_document(pages, api_key, model):
                 ),
             )
     except errors.APIError as exc:
+        if exc.code in (500, 502, 503, 504):
+            raise ProviderUnavailable('Gemini is temporarily busy or unavailable. Your report could not be completed. Please wait a minute and try again.') from exc
         if exc.code == 429:
             raise DocumentError('Gemini usage quota has been reached. Try again after your quota resets or check your Google AI Studio limits.') from exc
         raise
+    except (httpx.TimeoutException, httpx.TransportError) as exc:
+        raise ProviderUnavailable('Gemini is temporarily busy or unavailable. Please try again.') from exc
     if not response.candidates or response.candidates[0].finish_reason != types.FinishReason.STOP or not response.text:
         raise DocumentError('The AI could not complete this analysis. Please try again.')
-    return ground_findings(Analysis.model_validate_json(response.text), pages)
+    return ground_findings(schema_type.model_validate_json(response.text), pages)
 
 
 SAMPLE_PAGES = [normalize('''FICTIONAL STUDENT HOUSING AGREEMENT

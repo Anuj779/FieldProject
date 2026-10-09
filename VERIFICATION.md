@@ -40,3 +40,11 @@ This is a local prototype. OCR, saved histories, public deployment, survey colle
 ## Pre-push verification - 2026-10-05
 
 20 backend tests pass. Desktop/mobile browser and motion checks pass with no JavaScript errors. Browser configuration is mocked so local credentials do not change test expectations. The valid sample PDF is accepted and consent enables analysis. Missing Firebase Admin credentials now produce a specific setup error instead of an instruction to sign in again. Firebase web configuration is saved locally; Admin credentials remain missing, so a live authenticated upload is not yet verified.
+
+## Gemini availability repair
+
+Gemini 3.8 Flash repeatedly returned 503. Live fictional offer testing with 3.5 Flash-Lite produced three grounded Marathi findings and a valid PDF. Backup 3.1 Flash-Lite returned seven grounded agreement findings. Configured the tested models with bounded transient-error failover; no billing changes.
+
+## Vercel preparation - 2026-10-09
+
+30 backend tests pass. Desktop/mobile browser checks pass. Firebase service credentials authenticated successfully; live Hindi analysis of the fictional offer produced three grounded findings with zero rejected excerpts and a valid PDF. Added private environment-variable credentials, 4 MB upload limits, Python 3.12 configuration and a CDN asset build. Production deployment and real-user sign-in/upload on Vercel are not yet verified. No secrets are included in the deployment source.

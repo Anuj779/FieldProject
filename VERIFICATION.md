@@ -48,3 +48,7 @@ Gemini 3.8 Flash repeatedly returned 503. Live fictional offer testing with 3.5 
 ## Vercel preparation - 2026-10-09
 
 30 backend tests pass. Desktop/mobile browser checks pass. Firebase service credentials authenticated successfully; live Hindi analysis of the fictional offer produced three grounded findings with zero rejected excerpts and a valid PDF. Added private environment-variable credentials, 4 MB upload limits, Python 3.12 configuration and a CDN asset build. Production deployment and real-user sign-in/upload on Vercel are not yet verified. No secrets are included in the deployment source.
+
+## Upload retry repair - 2026-10-12
+
+32 backend tests passed. Invalid PDFs and failed analysis no longer consume the cooldown; successful analysis still does. File reselection resets the picker so the same PDF can be selected again. Added clear non-JSON hosting error messages. Browser upload regression verifies actual FormData PDF bytes, consent, hosting 413, same-file retry and inline results with mocked external services. Deployed URL was not provided, so production upload has not been verified.

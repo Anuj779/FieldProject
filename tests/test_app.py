@@ -79,7 +79,7 @@ def test_valid_upload_and_rate_limit(authenticated, monkeypatch):
     assert response.status_code == 200
     assert response.json['sample'] is False
     assert len(response.json['findings']) == 1
-    assert client.post('/api/analyze', headers=headers).status_code == 429
+    assert client.post('/api/analyze', headers=headers, data={'file': (io.BytesIO(pdf_bytes()), 'again.pdf')}).status_code == 429
 
 
 def test_missing_ai_configuration(authenticated):
@@ -292,3 +292,22 @@ def test_provider_retries_are_bounded(monkeypatch):
     with pytest.raises(analysis.ProviderUnavailable):
         analysis.analyze_document(['test'], 'fake', 'primary')
     assert len(calls) == 3
+
+
+def test_invalid_pdf_does_not_block_retry(authenticated, monkeypatch):
+    client, headers = authenticated
+    monkeypatch.setattr(app_module, 'analyze_document', lambda *args, **kwargs: ([], 0))
+    invalid = client.post('/api/analyze', headers=headers, data={'file': (io.BytesIO(b'broken'), 'broken.pdf')})
+    assert invalid.status_code == 422
+    valid = client.post('/api/analyze', headers=headers, data={'file': (io.BytesIO(pdf_bytes()), 'valid.pdf')})
+    assert valid.status_code == 200
+
+
+def test_provider_failure_does_not_block_retry(authenticated, monkeypatch):
+    client, headers = authenticated
+    def unavailable(*args, **kwargs):
+        raise DocumentError('Provider unavailable')
+    monkeypatch.setattr(app_module, 'analyze_document', unavailable)
+    assert client.post('/api/analyze', headers=headers, data={'file': (io.BytesIO(pdf_bytes()), 'valid.pdf')}).status_code == 422
+    monkeypatch.setattr(app_module, 'analyze_document', lambda *args, **kwargs: ([], 0))
+    assert client.post('/api/analyze', headers=headers, data={'file': (io.BytesIO(pdf_bytes()), 'valid.pdf')}).status_code == 200

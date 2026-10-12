@@ -69,7 +69,10 @@ document.addEventListener('alpine:init', () => {
     async json(url, options) {
       const response = await fetch(url, options);
       let body;
-      try { body = await response.json(); } catch { throw new Error('The server could not complete this request. Please try again.'); }
+      try { body = await response.json(); } catch {
+        const messages = {413: 'This upload exceeds the hosting limit. Choose a PDF smaller than 4 MB.', 401: 'Your session expired. Sign in again and retry.', 403: 'Access was blocked by the hosting service. Check deployment access settings.', 504: 'The hosting service timed out. Please retry with a shorter PDF.', 502: 'The server is temporarily unavailable. Please try again.'};
+        throw new Error(messages[response.status] || 'The server returned an unexpected response. Refresh and try again.');
+      }
       if (!response.ok) throw new Error(body.error || 'Something went wrong. Please try again.');
       return body;
     },
@@ -99,8 +102,8 @@ document.addEventListener('alpine:init', () => {
     selectFile(file) {
       if (this.busy) return;
       this.stopReading();
-      this.error = ''; this.file = null;
       if (!file) return;
+      this.error = ''; this.file = null; this.consent = false; this.result = null;
       if (!file.name.toLowerCase().endsWith('.pdf')) { this.error = 'Please choose a PDF file.'; return; }
       if (file.size > 4 * 1024 * 1024) { this.error = 'Choose a PDF smaller than 4 MB.'; return; }
       if (file.size === 0) { this.error = 'This file is empty. Choose another PDF.'; return; }

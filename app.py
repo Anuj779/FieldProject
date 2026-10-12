@@ -124,24 +124,27 @@ def create_app(test_config=None):
             return jsonify(error='Choose English, Hindi or Marathi.'), 400
         if not app.config['GEMINI_API_KEY']:
             return jsonify(error='Live AI analysis is not configured yet. You can explore the sample review.'), 503
-        with lock:
-            now = time.monotonic()
-            for uid in list(recent):
-                if now - recent[uid] > 60:
-                    del recent[uid]
-            if g.uid in recent:
-                return jsonify(error='Please wait one minute between analyses.'), 429
-            recent[g.uid] = now
         file = request.files.get('file')
         if not file or not file.filename.lower().endswith('.pdf'):
             return jsonify(error='Choose a PDF agreement to continue.'), 400
         if not slots.acquire(blocking=False):
             return jsonify(error='All analysis slots are busy. Please try again shortly.'), 429
+        reserved = False
+        completed = False
         try:
             data = file.read()
             if len(data) > 4 * 1024 * 1024:
                 return jsonify(error='Choose a PDF smaller than 4 MB.'), 413
             pages = extract_pages(data)
+            with lock:
+                now = time.monotonic()
+                for uid in list(recent):
+                    if now - recent[uid] > 60:
+                        del recent[uid]
+                if g.uid in recent:
+                    return jsonify(error='Please wait one minute between analyses.'), 429
+                recent[g.uid] = now
+            reserved = True
             kwargs = {'language': language}
             if mode == 'offer':
                 kwargs['mode'] = mode
@@ -161,7 +164,9 @@ def create_app(test_config=None):
                 assessment['analysis_method'] = ('Basic English screening: Gemini was unavailable. Only explicit payment, urgency, personal-contact and credential requests were checked. Other warning signs may be missed. Retry later for a full AI review in your chosen language.' if fallback else 'AI-assisted document screening with exact source checks. No external authenticity verification.')
                 assessment['status'] = ('Review incomplete' if rejected else 'Suspicious offer — verify before proceeding' if assessment['score'] >= 45 else 'Needs verification' if assessment['score'] else 'No matched warning signs — not verified real')
             filename = secure_filename(file.filename)[:120] or 'Agreement.pdf'
-            return payload(filename, pages, findings, rejected, language=language, assessment=assessment)
+            response = payload(filename, pages, findings, rejected, language=language, assessment=assessment)
+            completed = True
+            return response
         except DocumentError as exc:
             return jsonify(error=str(exc)), 422
         except Exception:
@@ -169,6 +174,9 @@ def create_app(test_config=None):
             app.logger.warning('Analysis failed; check provider configuration or availability.')
             return jsonify(error='Analysis is unavailable right now. Check your connection and try again later.'), 502
         finally:
+            if reserved and not completed:
+                with lock:
+                    recent.pop(g.uid, None)
             slots.release()
 
     return app

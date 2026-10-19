@@ -111,6 +111,10 @@ document.addEventListener('alpine:init', () => {
     },
     async loadSample() {
       if (this.busy) return;
+      if (this.view === 'workspace' && this.file) {
+        this.error = 'A PDF is selected. Check the consent box and click Analyze agreement to review your file. The sample is a separate prepared example.';
+        return;
+      }
       this.busy = true; this.error = '';
       const op = ++this.operation;
       try { const data = await this.json('/api/sample?language=' + this.language); if (op !== this.operation) return; this.showReport(data); }
@@ -134,12 +138,19 @@ document.addEventListener('alpine:init', () => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 150000);
       try {
+        const uploadedFile = this.file;
+        const digest = await crypto.subtle.digest('SHA-256', await uploadedFile.arrayBuffer());
+        const expectedHash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
         this.scanStage = 'Verifying your session';
         const token = await currentUser.getIdToken(true);
         this.scanStage = 'Analyzing your PDF and preparing the report';
-        const form = new FormData(); form.append('file', this.file); form.append('language', this.language); form.append('mode', this.reviewMode);
+        const form = new FormData(); form.append('file', uploadedFile); form.append('language', this.language); form.append('mode', this.reviewMode);
         const data = await this.json('/api/analyze', {method: 'POST', headers: {Authorization: 'Bearer ' + token}, body: form, signal: controller.signal});
         if (op !== this.operation || !this.user) return;
+        if (data.sample !== false || data.document_hash !== expectedHash || !['live_ai', 'basic_screening'].includes(data.analysis_source)) {
+          this.result = null;
+          throw new Error('The returned report could not be matched to your PDF. Refresh the website and analyze again; no sample report has been substituted.');
+        }
         this.showReport(data);
       } catch (error) { if (op === this.operation) this.error = error.name === 'AbortError' ? 'This analysis took too long. Please retry with a shorter document.' : error.message; }
       finally { clearTimeout(timer); if (op === this.operation) { this.busy = false; this.scanStage = ''; } }

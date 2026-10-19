@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import json
 import os
 import threading
@@ -93,13 +94,14 @@ def create_app(test_config=None):
         return jsonify(firebase=app.config['FIREBASE_WEB_CONFIG'] if ready() else None,
                        ai_ready=bool(app.config['GEMINI_API_KEY']))
 
-    def payload(filename, pages, findings, rejected, sample=False, language="en", assessment=None):
+    def payload(filename, pages, findings, rejected, sample=False, language="en", assessment=None, document_hash=None, analysis_source='prepared_sample'):
         from localization import CATEGORIES
         for finding in findings:
             finding['category_label'] = CATEGORIES.get(language, {}).get(finding['category'], finding['category'])
         report = make_report(filename, findings, sample=sample, rejected=rejected, language=language, assessment=assessment)
         return jsonify(filename=filename, pages=len(pages), findings=findings, rejected=rejected,
-                       sample=sample, language=language, assessment=assessment, report=base64.b64encode(report).decode('ascii'))
+                       sample=sample, language=language, assessment=assessment, document_hash=document_hash,
+                       analysis_source=analysis_source, report=base64.b64encode(report).decode('ascii'))
 
     @app.get('/api/sample')
     def sample():
@@ -164,7 +166,9 @@ def create_app(test_config=None):
                 assessment['analysis_method'] = ('Basic English screening: Gemini was unavailable. Only explicit payment, urgency, personal-contact and credential requests were checked. Other warning signs may be missed. Retry later for a full AI review in your chosen language.' if fallback else 'AI-assisted document screening with exact source checks. No external authenticity verification.')
                 assessment['status'] = ('Review incomplete' if rejected else 'Suspicious offer — verify before proceeding' if assessment['score'] >= 45 else 'Needs verification' if assessment['score'] else 'No matched warning signs — not verified real')
             filename = secure_filename(file.filename)[:120] or 'Agreement.pdf'
-            response = payload(filename, pages, findings, rejected, language=language, assessment=assessment)
+            response = payload(filename, pages, findings, rejected, language=language, assessment=assessment,
+                               document_hash=hashlib.sha256(data).hexdigest(),
+                               analysis_source='basic_screening' if fallback else 'live_ai')
             completed = True
             return response
         except DocumentError as exc:

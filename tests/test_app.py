@@ -311,3 +311,33 @@ def test_provider_failure_does_not_block_retry(authenticated, monkeypatch):
     assert client.post('/api/analyze', headers=headers, data={'file': (io.BytesIO(pdf_bytes()), 'valid.pdf')}).status_code == 422
     monkeypatch.setattr(app_module, 'analyze_document', lambda *args, **kwargs: ([], 0))
     assert client.post('/api/analyze', headers=headers, data={'file': (io.BytesIO(pdf_bytes()), 'valid.pdf')}).status_code == 200
+
+
+def test_distinct_uploads_generate_distinct_reports(authenticated, monkeypatch):
+    import hashlib
+    from firebase_admin import auth
+    client, _ = authenticated
+    monkeypatch.setattr(auth, 'verify_id_token', lambda token, check_revoked: {'uid': token})
+    seen = []
+    def analyze(pages, *args, **kwargs):
+        seen.append(pages[0])
+        return [dict(category='Payment', title='Payment stated in this PDF', explanation=pages[0], quote=pages[0], page=1, needs_clarification=False, question='')], 0
+    monkeypatch.setattr(app_module, 'analyze_document', analyze)
+    statements = ['The tenant pays INR 12345 each month for Apartment ALPHA.', 'The intern receives INR 67890 per month at Employer BETA.']
+    responses = []
+    for index, statement in enumerate(statements):
+        pdf = pdf_bytes(statement)
+        response = client.post('/api/analyze', headers={'Authorization': 'Bearer user-'+str(index)}, data={'file':(io.BytesIO(pdf), 'document.pdf')})
+        assert response.status_code == 200
+        result = response.json
+        assert result['sample'] is False
+        assert result['analysis_source'] == 'live_ai'
+        assert result['document_hash'] == hashlib.sha256(pdf).hexdigest()
+        assert result['findings'][0]['quote'] == statement
+        report = ''.join(page.extract_text() for page in PdfReader(io.BytesIO(base64.b64decode(result['report']))).pages)
+        assert statement in report
+        assert 'Rent is due by the 5th' not in report
+        responses.append(result)
+    assert seen == statements
+    assert responses[0]['document_hash'] != responses[1]['document_hash']
+    assert responses[0]['report'] != responses[1]['report']

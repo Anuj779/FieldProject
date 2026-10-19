@@ -52,3 +52,7 @@ Gemini 3.8 Flash repeatedly returned 503. Live fictional offer testing with 3.5 
 ## Upload retry repair - 2026-10-12
 
 32 backend tests passed. Invalid PDFs and failed analysis no longer consume the cooldown; successful analysis still does. File reselection resets the picker so the same PDF can be selected again. Added clear non-JSON hosting error messages. Browser upload regression verifies actual FormData PDF bytes, consent, hosting 413, same-file retry and inline results with mocked external services. Deployed URL was not provided, so production upload has not been verified.
+
+## Document-specific report verification - 2026-10-19
+
+Restored the missing local workspace from GitHub. Public production config and JavaScript at clausewise-bay.vercel.app were inspected. Removed the workspace demo action when a PDF is selected and explicitly labelled demo versus uploaded-file results. Upload responses now include the PDF SHA-256 fingerprint and analysis source; the browser rejects sample or mismatched responses. 33 backend tests passed, including distinct text, distinct report bytes, and distinct hashes for two PDFs with the same filename (AI/auth mocked). Browser upload tests reject injected sample responses and accept matching uploads. A new signed-in production AI run was not performed: local credentials were lost with the original folder.

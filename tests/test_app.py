@@ -68,6 +68,26 @@ def test_invalid_token_is_rejected(authenticated):
     assert client.post('/api/analyze', headers={'Authorization': 'Bearer forged'}).status_code == 401
 
 
+def test_language_switch_allowed_immediately_for_same_pdf(authenticated, monkeypatch):
+    client, headers = authenticated
+    calls = []
+    def analyze(pages, *args, language='en', **kwargs):
+        calls.append(language)
+        return [], 0
+    monkeypatch.setattr(app_module, 'analyze_document', analyze)
+    pdf = pdf_bytes()
+    for language in ('en', 'hi', 'mr'):
+        response = client.post('/api/analyze', headers=headers, data={'language': language, 'file': (io.BytesIO(pdf), 'same.pdf')})
+        assert response.status_code == 200
+        assert response.json['language'] == language
+        assert base64.b64decode(response.json['report']).startswith(b'%PDF')
+    assert calls == ['en', 'hi', 'mr']
+    repeated = client.post('/api/analyze', headers=headers, data={'language': 'hi', 'file': (io.BytesIO(pdf), 'same.pdf')})
+    assert repeated.status_code == 429
+    different = client.post('/api/analyze', headers=headers, data={'file': (io.BytesIO(pdf_bytes('The employee receives INR 50000 each month under this different agreement.')), 'other.pdf')})
+    assert different.status_code == 429
+
+
 def test_server_credential_failure_is_not_a_session_error(authenticated, monkeypatch):
     from firebase_admin import auth
     from google.auth.exceptions import RefreshError

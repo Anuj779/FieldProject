@@ -148,14 +148,19 @@ def create_app(test_config=None):
             if len(data) > 4 * 1024 * 1024:
                 return jsonify(error='Choose a PDF smaller than 4 MB.'), 413
             pages = extract_pages(data)
+            document_hash = hashlib.sha256(data).hexdigest()
+            version = (language, mode)
             with lock:
                 now = time.monotonic()
                 for uid in list(recent):
-                    if now - recent[uid] > 60:
+                    if now - recent[uid]['time'] > 60:
                         del recent[uid]
-                if g.uid in recent:
-                    return jsonify(error='Please wait one minute between analyses.'), 429
-                recent[g.uid] = now
+                entry = recent.get(g.uid)
+                if entry and (entry['document'] != document_hash or version in entry['versions']):
+                    return jsonify(error='Please wait one minute before repeating this analysis or uploading a different PDF. You can change this PDF to another report language now.'), 429
+                if not entry:
+                    entry = recent[g.uid] = dict(time=now, document=document_hash, versions=set())
+                entry['versions'].add(version)
             reserved = True
             kwargs = {'language': language}
             if mode == 'offer':
@@ -190,7 +195,11 @@ def create_app(test_config=None):
         finally:
             if reserved and not completed:
                 with lock:
-                    recent.pop(g.uid, None)
+                    entry = recent.get(g.uid)
+                    if entry and entry['document'] == document_hash:
+                        entry['versions'].discard(version)
+                        if not entry['versions']:
+                            recent.pop(g.uid, None)
             slots.release()
 
     return app

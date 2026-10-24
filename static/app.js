@@ -13,7 +13,7 @@ document.addEventListener('alpine:init', () => {
       if (this.speechState === 'paused') { ClauseReader.resume(); this.speechState = 'playing'; this.speechMessage = 'Reading resumed.'; return; }
       ClauseReader.play(this.result, this.speechRate, (state, message) => { this.speechState = state; this.speechMessage = message; });
     },
-    file: null, consent: false, dragging: false, result: null, reportView: null, filter: 'All', operation: 0, scanStage: '', language: 'en', reportLanguage: 'en', reviewMode: 'agreement',
+    file: null, consent: false, dragging: false, result: null, reportView: null, filter: 'All', operation: 0, scanStage: '', language: 'en', reportLanguage: 'en', reviewMode: 'agreement', reportCache: {},
     get reportLabels() {
       const values = {
         en: ['Your agreement, in plain English.', 'Download PDF', 'source-backed findings', 'pages reviewed', 'Read original clause', 'Ask the provider:', 'Page', 'All findings'],
@@ -57,6 +57,7 @@ document.addEventListener('alpine:init', () => {
     openWorkspace() { this.go(this.user ? 'workspace' : 'login'); },
     showReport(data) {
       this.stopReading();
+      if (!data.sample) this.reportCache[data.document_hash + ':' + this.reviewMode + ':' + data.language] = data;
       this.result = data; this.reportLanguage = data.language || 'en'; this.filter = 'All'; this.reportView = this.view;
       this.$nextTick(() => {
         window.ClauseMotion?.refresh();
@@ -103,7 +104,7 @@ document.addEventListener('alpine:init', () => {
       if (this.busy) return;
       this.stopReading();
       if (!file) return;
-      this.error = ''; this.file = null; this.consent = false; this.result = null;
+      this.error = ''; this.file = null; this.consent = false; this.result = null; this.reportCache = {};
       if (!file.name.toLowerCase().endsWith('.pdf')) { this.error = 'Please choose a PDF file.'; return; }
       if (file.size > 4 * 1024 * 1024) { this.error = 'Choose a PDF smaller than 4 MB.'; return; }
       if (file.size === 0) { this.error = 'This file is empty. Choose another PDF.'; return; }
@@ -126,7 +127,10 @@ document.addEventListener('alpine:init', () => {
       this.stopReading();
       this.language = this.reportLanguage;
       if (this.result.sample) { await this.loadSample(); return; }
+      const cached = this.reportCache[this.result.document_hash + ':' + this.reviewMode + ':' + this.language];
+      if (cached) { this.error = ''; this.showReport(cached); return; }
       if (!this.file) { this.error = 'Select the original PDF again to generate a report in another language.'; return; }
+      if (!this.consent) { this.error = 'Check the consent box to prepare the report in another language.'; return; }
       await this.analyze(true);
     },
     async analyze(preserveReport = false) {
@@ -150,6 +154,9 @@ document.addEventListener('alpine:init', () => {
         if (data.sample !== false || data.document_hash !== expectedHash || !['live_ai', 'basic_screening'].includes(data.analysis_source)) {
           this.result = null;
           throw new Error('The returned report could not be matched to your PDF. Refresh the website and analyze again; no sample report has been substituted.');
+        }
+        if (preserveReport && data.language !== this.language) {
+          throw new Error('The AI language service is unavailable. Your existing report has been kept. Please retry the selected language later.');
         }
         this.showReport(data);
       } catch (error) { if (op === this.operation) this.error = error.name === 'AbortError' ? 'This analysis took too long. Please retry with a shorter document.' : error.message; }

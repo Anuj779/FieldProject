@@ -68,6 +68,32 @@ def test_invalid_token_is_rejected(authenticated):
     assert client.post('/api/analyze', headers={'Authorization': 'Bearer forged'}).status_code == 401
 
 
+def test_server_credential_failure_is_not_a_session_error(authenticated, monkeypatch):
+    from firebase_admin import auth
+    from google.auth.exceptions import RefreshError
+    client, headers = authenticated
+    def fail(*args, **kwargs):
+        raise RefreshError('private-secret-must-not-leak')
+    monkeypatch.setattr(auth, 'verify_id_token', fail)
+    response = client.post('/api/analyze', headers=headers)
+    assert response.status_code == 503
+    assert response.json['code'] == 'AUTH_SERVER_CREDENTIALS'
+    assert 'private-secret' not in response.get_data(as_text=True)
+
+
+def test_vercel_requires_private_credentials(authenticated, monkeypatch):
+    import firebase_admin
+    client, headers = authenticated
+    def missing():
+        raise ValueError('No app')
+    monkeypatch.setattr(firebase_admin, 'get_app', missing)
+    monkeypatch.setenv('VERCEL', '1')
+    monkeypatch.delenv('FIREBASE_ADMIN_CREDENTIALS', raising=False)
+    response = client.post('/api/analyze', headers=headers)
+    assert response.status_code == 503
+    assert response.json['code'] == 'AUTH_SERVER_CONFIG'
+
+
 def test_valid_upload_and_rate_limit(authenticated, monkeypatch):
     client, headers = authenticated
     def analyze(pages, api_key, model, language="en"):

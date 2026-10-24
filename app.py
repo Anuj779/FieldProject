@@ -45,10 +45,11 @@ def create_app(test_config=None):
                 return jsonify(error='Please sign in to analyze your agreement.'), 401
             if not ready():
                 return jsonify(error='Firebase sign-in has not been configured yet.'), 503
-            from google.auth.exceptions import DefaultCredentialsError
+            from google.auth.exceptions import DefaultCredentialsError, RefreshError, TransportError
+            import firebase_admin
+            from firebase_admin import auth, exceptions as firebase_errors
+            from firebase_config import parse_credentials
             try:
-                import firebase_admin
-                from firebase_admin import auth
                 with lock:
                     try:
                         firebase_admin.get_app()
@@ -56,18 +57,27 @@ def create_app(test_config=None):
                         raw_credentials = os.getenv('FIREBASE_ADMIN_CREDENTIALS', '')
                         if raw_credentials:
                             from firebase_admin import credentials
-                            credential_data = json.loads(raw_credentials)
-                            if credential_data.get('project_id') != app.config['FIREBASE_WEB_CONFIG']['projectId']:
-                                raise DefaultCredentialsError('Firebase project mismatch')
+                            credential_data = parse_credentials(raw_credentials, app.config['FIREBASE_WEB_CONFIG']['projectId'])
                             firebase_admin.initialize_app(credentials.Certificate(credential_data), options={'projectId': credential_data['project_id']})
+                        elif os.getenv('VERCEL'):
+                            raise DefaultCredentialsError('Missing private environment variable')
                         else:
                             firebase_admin.initialize_app(options={'projectId': app.config['FIREBASE_WEB_CONFIG']['projectId']})
+            except (DefaultCredentialsError, ValueError, TypeError):
+                return jsonify(code='AUTH_SERVER_CONFIG', error='Firebase server authentication setup is incomplete. In Vercel Production environment variables, set FIREBASE_ADMIN_CREDENTIALS to the complete service-account JSON for this Firebase project, then redeploy. Signing in again will not fix this configuration error.'), 503
+            try:
                 g.uid = auth.verify_id_token(token[7:], check_revoked=True)['uid']
-            except DefaultCredentialsError:
-                return jsonify(error='Your PDF has not been analyzed because server authentication setup is incomplete. Configure the Firebase Admin service-account file, then try again.'), 503
+            except (auth.ExpiredIdTokenError, auth.RevokedIdTokenError, auth.UserDisabledError, auth.UserNotFoundError):
+                return jsonify(code='AUTH_SESSION_EXPIRED', error='Your session expired or was revoked. Sign out and sign in again, then retry your PDF.'), 401
+            except (DefaultCredentialsError, RefreshError, firebase_errors.PermissionDeniedError, firebase_errors.UnauthenticatedError):
+                return jsonify(code='AUTH_SERVER_CREDENTIALS', error='The server could not authenticate with Firebase. Check the Production Firebase service-account key and its Firebase Authentication permissions, then redeploy.'), 503
+            except (auth.CertificateFetchError, TransportError, firebase_errors.UnavailableError, firebase_errors.DeadlineExceededError):
+                return jsonify(code='AUTH_SERVICE_UNAVAILABLE', error='Firebase verification is temporarily unreachable. Please retry shortly; your PDF has not been analyzed.'), 503
+            except (auth.InvalidIdTokenError, ValueError):
+                return jsonify(code='AUTH_TOKEN_INVALID', error='This login token is invalid or belongs to another Firebase project. Sign out and sign in again. If it persists, the web and server Firebase project settings must match.'), 401
             except Exception as exc:
                 app.logger.warning('Firebase verification failed: %s', type(exc).__name__)
-                return jsonify(error='Your session could not be verified. Please sign in again. If this continues, check the Firebase server configuration.'), 401
+                return jsonify(code='AUTH_VERIFICATION_FAILED', error='Firebase verification failed on the server. Check the Vercel runtime log for the Firebase error type; no report has been generated.'), 503
             return fn(*args, **kwargs)
         return wrapped
 
